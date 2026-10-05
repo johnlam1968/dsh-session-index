@@ -6,7 +6,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,5 +65,24 @@ test('the CLI builds a store WITHOUT the mirror when asked, and says the mechani
         assert.match(build.stdout, /no FTS5 mirror/)
         const search = run('search', 'phrase the scan', '--out', out)
         assert.match(search.stdout, /LIKE scan/)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('the summary survives REDIRECTION, not only a pipe -- the CLI must not exit out from under its own output', () => {
+    // Measured: the CLI ended with `process.exit(...)`, and with stdout a FILE the summary it had just built was thrown
+    // away -- a full rebuild whose log contained nothing but the progress counter, while the build itself had
+    // succeeded. `process.exitCode` is the fix: the process ends when the loop drains, so everything written is flushed.
+    const root = fixture()
+    const out = join(root, 'redirected.db')
+    const log = join(root, 'build.log')
+    try {
+        const fd = openSync(log, 'w')
+        const run = spawnSync(process.execPath, [CLI, 'build', '--out', out, '--sessions', root, '--text'], { stdio: ['ignore', fd, 'ignore'] })
+        closeSync(fd)
+        assert.equal(run.status, 0)
+        const text = readFileSync(log, 'utf8')
+        assert.match(text, /session\(s\) in the store/, 'the summary reached the file')
+        assert.match(text, /search: fts5/)
+        assert.match(text, /size:/)
     } finally { rmSync(root, { recursive: true, force: true }) }
 })

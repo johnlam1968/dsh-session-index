@@ -89,7 +89,7 @@ test('a tool RESULT is kept and paired through the id it actually carries', () =
     try {
         const { text, sha256 } = sessionLines(join(f.dir, 'session.v4.jsonl'))
         const { results } = foldSession({ id: f.id, path: 'x', version: 4, text, sha256, bytes: 1 })
-        assert.deepEqual(results, [[f.id, 'c1', 'pushed', 6, 0]], 'paired by message.toolCallId, not by position, with the full length recorded')
+        assert.deepEqual(results, [[f.id, 'c1', 'pushed', 6, 0, 5]], 'paired by message.toolCallId, not by position, with the full length recorded')
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
 
@@ -172,6 +172,11 @@ test('a refold of ONE session maintains THAT session\'s mirror rows, and does no
         assert.equal(second.refolded, 1)
         assert.equal(second.ftsRebuilt, false, 'one changed session must NOT rebuild the mirror whole')
         assert.equal(second.ftsMaintained, 1)
+        // AND IT APPENDS: measured before this existed, maintaining one 15,037-row session cost a 4,087 ms delete plus
+        // a 4,413 ms insert, and a rowid map would have saved 92 ms of it -- so the WORK had to go, not the lookup.
+        assert.equal(second.ftsAppended, 1, 'the receipt said how far the mirror was built, so only the new rows were mirrored')
+        assert.equal(second.ftsReplaced, 0, 'nothing needed replacing')
+        assert.equal((await searchSessions('a newly appended phrase', { path: out })).rows.length, 1, 'and the appended text IS searchable')
         assert.equal((await searchSessions('a newly appended phrase', { path: out })).rows.length, 1, 'the changed session is current')
         assert.equal((await searchSessions('untouched phrase', { path: out })).rows.length, 1, 'and the session nobody touched is still searchable')
     } finally { rmSync(f.root, { recursive: true, force: true }) }
@@ -326,6 +331,33 @@ test('one session held in two format versions is indexed once, from the newer fi
         const files = sessionFiles(f.root)
         assert.equal(files.length, 1)
         assert.equal(files[0].version, 4)
+    } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+
+test('a session with NO mirror receipt is REPLACED, not appended -- correct rather than clever', async () => {
+    const f = fixture()
+    const out = join(f.root, 'receipt.db')
+    try {
+        buildIndex({ sessionsDir: f.root, out, withText: true })
+        // the receipt is what makes an append safe: without it, "which rows are already mirrored" is unanswerable
+        const { DatabaseSync } = await import('node:sqlite')
+        const db = new DatabaseSync(out)
+        db.exec('DELETE FROM mirror_state')
+        db.close()
+        appendFileSync(join(f.dir, 'session.v4.jsonl'), JSON.stringify({
+            type: 'user/message', seq: 12, time: 12, data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'after the receipt was lost' }] },
+        }) + '\n')
+        const rebuilt = buildIndex({ sessionsDir: f.root, out, incremental: true, withText: true })
+        assert.equal(rebuilt.ftsReplaced, 1, 'no receipt means replace')
+        assert.equal(rebuilt.ftsAppended, 0, 'and never append')
+        assert.equal((await searchSessions('after the receipt was lost', { path: out })).rows.length, 1)
+        // and the receipt was re-established, so the NEXT build appends again
+        appendFileSync(join(f.dir, 'session.v4.jsonl'), JSON.stringify({
+            type: 'user/message', seq: 13, time: 13, data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'appended after the receipt returned' }] },
+        }) + '\n')
+        const next = buildIndex({ sessionsDir: f.root, out, incremental: true, withText: true })
+        assert.equal(next.ftsAppended, 1, 'the receipt exists again')
+        assert.equal((await searchSessions('appended after the receipt returned', { path: out })).rows.length, 1)
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
 

@@ -36,7 +36,9 @@ async function main(argv) {
             + `${result.modeChanged && !result.schemaMoved ? ' (the TEXT MODE changed, so every receipt was void)' : ''}`
             + `, in ${ms(started)} -> ${result.out}`)
         console.log(`  cost: refold ${(result.refoldMs / 1000).toFixed(1)} s (decode ${(result.decodeMs / 1000).toFixed(1)} s, fold ${(result.foldMs / 1000).toFixed(1)} s, insert ${(result.insertMs / 1000).toFixed(1)} s), mirror ${(result.mirrorMs / 1000).toFixed(1)} s`)
-        console.log(`  search: ${result.searchMode}${result.searchMode === 'fts5' ? ` (${result.tokenizer}), ${result.ftsRows} mirrored row(s)${result.ftsRebuilt ? ' (rebuilt whole)' : result.ftsMaintained > 0 ? ` (maintained for ${result.ftsMaintained} session(s))` : ' (unchanged)'}` : ' -- no FTS5 mirror, text is matched by scan'}`)
+        console.log(`  search: ${result.searchMode}${result.searchMode === 'fts5' ? ` (${result.tokenizer}), ${result.ftsRows} mirrored row(s)${result.ftsRebuilt ? ' (rebuilt whole)'
+                : result.ftsMaintained > 0 ? ` (maintained for ${result.ftsMaintained} session(s): ${result.ftsAppended} appended, ${result.ftsReplaced} replaced, ${result.ftsUnchanged} unchanged)`
+                : ' (unchanged)'}` : ' -- no FTS5 mirror, text is matched by scan'}`)
         console.log(`  with a session/title event: ${result.titled} | without: ${result.untitled}` +
             (result.untitled > 0 ? ' (those are the ones a title service must fold per request)' : ''))
         console.log(`  size: ${(statSync(out).size / 1048576).toFixed(1)} MB`)
@@ -84,4 +86,7 @@ async function main(argv) {
     return 2
 }
 
-if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].split('/').pop())) process.exit(await main(process.argv.slice(2)))
+// THE EXIT CODE, NOT `process.exit`. Measured: with stdout redirected to a file or a pipe, `process.exit()` after the
+// summary was built threw the summary away -- the rebuild's own lines vanished from its log while the build had
+// succeeded. Setting the code lets the process end when the loop drains, so everything written is flushed.
+if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].split('/').pop())) process.exitCode = await main(process.argv.slice(2))

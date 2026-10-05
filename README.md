@@ -119,13 +119,19 @@ a trigram index stores.
 | what | cost |
 |---|---|
 | full build with text and the trigram mirror | 562 s, 617.8 MB, 91,158 mirrored rows |
-| refresh of ONE living 33 MB session | **21 s** — refold 2.1 s (decode 0.9, fold 0.9, insert 0.3), mirror 18.7 s |
+| refresh of ONE living 33 MB session | **2.7 s** — refold 2.2 s (decode 0.9, fold 1.0, insert 0.4), mirror **0.4 s** (append-only) |
 | search | 4–13 ms (mirror) against 242 ms (scan) |
 
 Two fixes are recorded in the numbers rather than in prose: writing a refolded session in **one transaction** took the
 insert phase from 41.3 s to 0.3 s, and maintaining the FTS mirror **per session** took a one-session refresh from
-110 s to 56 s. The remaining 18.7 s is `DELETE … WHERE session_id = ?` scanning an UNINDEXED FTS column; a
-`session_id → rowid` map (or an external-content FTS5 table over an indexed rows table) is the measured next step.
+110 s to 56 s. The mirror step is now **APPEND-ONLY**, and the remedy this README used to name was retired by measurement
+(`F106`): `DELETE … WHERE session_id = ?` on a 15,037-row session costs **4,087 ms**, deleting the same rows **by rowid**
+costs **4,129 ms**, and the lookup a `session_id → rowid` map would replace costs **92 ms** — the seconds are FTS5's
+trigram index work, not the search for the rows. So the work was removed instead of the lookup: `search_fts` carries
+`seq`, `mirror_state(session_id, high_water)` records how far each session's mirror was built, and maintenance appends
+**only the rows above that mark** — which a DSH log makes safe, because it only ever grows. A session with no receipt,
+a log that shrank, or a row with no `seq` is **replaced** rather than guessed at, and the build reports which path ran
+(`ftsAppended` / `ftsReplaced` / `ftsUnchanged`). `SCHEMA_VERSION` 4 costs one full rebuild, once.
 
 ## Tests
 
