@@ -328,3 +328,20 @@ test('one session held in two format versions is indexed once, from the newer fi
         assert.equal(files[0].version, 4)
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
+
+test('a store built with NO mirror searches by SCAN, and says so', async () => {
+    // The other half of the mode receipt: `search_mode` is `like`, the LIKE path answers, and the caller can tell that
+    // it was a scan rather than an index -- which is what makes "no matches" readable either way.
+    const f = fixture()
+    const out = join(f.root, 'scan.db')
+    try {
+        const built = buildIndex({ sessionsDir: f.root, out, withText: true, fts: false })
+        assert.equal(built.searchMode, 'like')
+        assert.equal(built.ftsRows, 0)
+        const found = await searchSessions('summary of the above', { path: out })
+        assert.equal(found.searchMode, 'like')
+        assert.equal(found.textIndexed, true)
+        assert.equal(found.rows.length, 1)
+        assert.equal((await metaOf(out)).search_mode, 'like')
+    } finally { rmSync(f.root, { recursive: true, force: true }) }
+})

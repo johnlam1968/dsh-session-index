@@ -102,3 +102,27 @@ test('`list` reports what the store holds, `search` says which mechanism answere
         assert.equal(refreshed.refolded, 0)
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
+
+test('the tools REFUSE BY NAME: a bad argument, a missing session, an empty query, a store that is not there', async () => {
+    const f = fixture()
+    try {
+        const tools = createTools({ service: createSessionIndex({ path: f.path, sessionsDir: f.root }) })
+        const read = toolNamed(tools, TOOL_NAMES.read)
+        const search = toolNamed(tools, TOOL_NAMES.search)
+        const list = toolNamed(tools, TOOL_NAMES.list)
+        assert.match((await read.execute({})).problems.join(' '), /`sessionId` is required/)
+        assert.match((await search.execute({ query: '   ' })).problems.join(' '), /`query` is required/)
+        assert.match((await list.execute({ limit: 'twenty' })).problem, /`limit` must be a number/)
+        assert.match((await list.execute({ cwd: 7 })).problem, /`cwd` must be a string/)
+        assert.match((await read.execute({ sessionId: 'session-a', kinds: 'operator' })).problem, /`kinds` must be an array/)
+        // a store that was never built: a named absence, not an empty library
+        const nowhere = createTools({ service: createSessionIndex({ path: join(f.root, 'nothing.db'), sessionsDir: f.root }) })
+        const missing = await toolNamed(nowhere, TOOL_NAMES.list).execute({})
+        assert.match(missing.problems.join(' '), /no readable store at/, 'a store that is not there is a PROBLEM, not an `problem`: the call was made')
+        assert.equal((await toolNamed(nowhere, TOOL_NAMES.search).execute({ query: 'x' })).textIndexed, false, 'and search says the store holds no text rather than nothing at all')
+        // and a session whose FILE is gone is named too, rather than read as an empty conversation
+        const { rmSync: remove } = await import('node:fs')
+        remove(join(f.root, '--home-john-proj--', 'session-a', 'session.v4.jsonl'))
+        assert.match((await read.execute({ sessionId: 'session-a' })).problem, /could not be read/)
+    } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
