@@ -91,6 +91,12 @@ asked what it holds, or what a session said, is not usable on its own. Remarks f
   not take.
 * **Other harnesses** (pi, minimax-code, zeroclaw, Hermes) write their own formats; the reader is dsh-format-specific
   and a second format is a second reader, not a flag.
+* **The service is live but NOT CATALOGUED**, measured after the first real deployment: `cordis_inspect_query
+  { platform: 'host', provider: 'Service', method: 'listService' }` lists the harness's own services (including
+  `sessionQuery`) and does not list `localSessionIndex`, while `listTools` does list all four of this plugin's tools.
+  The catalogue appears to hold services that carry a declared contract, and this one is provided as a plain object --
+  a consumer can still inject it by name, but it is not discoverable or typed through the catalogue. Declaring it
+  properly is the first item for the next reader.
 
 ## The store
 
