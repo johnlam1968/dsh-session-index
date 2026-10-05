@@ -4,6 +4,8 @@
 // It is deliberately thin. Everything it does is a call into `lib/build.js` (the builder) or `lib/store.js` (the read
 // side), so the CLI cannot drift from what the plugin's service does -- the same functions answer both.
 
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 import { DEFAULT_INDEX, DEFAULT_SESSIONS_DIR, buildIndex, readCounts } from '../lib/build.js'
 import { findSessions, searchSessions } from '../lib/store.js'
 
