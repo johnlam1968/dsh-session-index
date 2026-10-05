@@ -43,7 +43,9 @@ test('the plugin offers list, read, search and refresh -- and declares every fie
         for (const defined of tools) {
             assert.equal(typeof defined.description, 'string')
             assert.ok(defined.description.length > 40, defined.name + ' explains itself')
-            assert.equal(defined.output.schema, TOOL_OUTPUT)
+            // DEEP, NOT REFERENCE: `defineTool` normalises the schema it is given, so the definition holds an equal
+            // structure rather than the same object.
+            assert.deepEqual(defined.output.schema, TOOL_OUTPUT)
         }
         const values = [
             await toolNamed(tools, TOOL_NAMES.list).execute({}),
@@ -78,6 +80,8 @@ test('`read` shows the two voices, says what the surface withdrew, and pages the
         const missing = await read.execute({ sessionId: 'nope' })
         assert.match(missing.problem, /no session "nope" in the index/)
         // an unknown argument is refused by name rather than ignored
+        // AN UNKNOWN KEY IS OURS TO REFUSE, because the authored root is an implicit OPEN object (tools.md 3.4): the
+        // framework accepts it and our own `checkAgainst` names it.
         assert.match((await read.execute({ sessionId: 'session-a', nonsense: 1 })).problem, /unknown parameter `nonsense`/)
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
@@ -112,9 +116,12 @@ test('the tools REFUSE BY NAME: a bad argument, a missing session, an empty quer
         const list = toolNamed(tools, TOOL_NAMES.list)
         assert.match((await read.execute({})).problems.join(' '), /`sessionId` is required/)
         assert.match((await search.execute({ query: '   ' })).problems.join(' '), /`query` is required/)
-        assert.match((await list.execute({ limit: 'twenty' })).problem, /`limit` must be a number/)
-        assert.match((await list.execute({ cwd: 7 })).problem, /`cwd` must be a string/)
-        assert.match((await read.execute({ sessionId: 'session-a', kinds: 'operator' })).problem, /`kinds` must be an array/)
+        // A MALFORMED ARGUMENT IS NOW REFUSED BY THE FRAMEWORK, not by us: `defineTool` validates against the schema
+        // before `execute` runs and throws a `ToolArgsError` (tools.md 4). Our own `checkAgainst` still answers for
+        // what the DSL cannot express -- an UNKNOWN key, because the authored root is an implicit OPEN object.
+        await assert.rejects(() => list.execute({ limit: 'twenty' }), (error) => error.code === 'INVALID_ARGS' && /limit/.test(error.message))
+        await assert.rejects(() => list.execute({ cwd: 7 }), (error) => error.code === 'INVALID_ARGS' && /cwd/.test(error.message))
+        await assert.rejects(() => read.execute({ sessionId: 'session-a', kinds: 'operator' }), (error) => error.code === 'INVALID_ARGS' && /kinds/.test(error.message))
         // a store that was never built: a named absence, not an empty library
         const nowhere = createTools({ service: createSessionIndex({ path: join(f.root, 'nothing.db'), sessionsDir: f.root }) })
         const missing = await toolNamed(nowhere, TOOL_NAMES.list).execute({})

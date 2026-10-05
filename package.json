@@ -44,6 +44,7 @@
     "package.json"
   ],
   "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
     "@deepseek-ai/schemastery": "3.18.4"
   },
   "engines": {
