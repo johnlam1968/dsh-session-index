@@ -10,6 +10,7 @@
 // `openAt: never` and this store carries the capability instead. That history is the reason this package exists and is
 // written down here so a reader of it alone does not have to discover it.
 
+import { Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defaultIndexPath, findSessions, listSessions, metaOf, searchSessions, sessionRow } from './lib/store.js'
 import { refreshIndex } from './lib/refresh.js'
@@ -20,6 +21,12 @@ const name = 'session-index'
 
 /** The service name a consumer injects. */
 export const SESSION_INDEX_SERVICE = 'localSessionIndex'
+
+/**
+ * THE HOST SERVICES THIS PLUGIN REACHES, declared rather than discovered (the audit's rule (c), `F107`): `tools` is the
+ * whole of it. `test/session-index-plugin.test.js` checks this against the source rather than trusting it.
+ */
+export const HOST_SERVICES = ['tools']
 
 const Config = Schema.object({
     path: Schema.string().description('The derived store. Droppable: a refresh recreates it.').default(defaultIndexPath()),
@@ -53,18 +60,43 @@ export function createSessionIndex({ path = defaultIndexPath(), sessionsDir = un
     }
 }
 
+/**
+ * THE SERVICE, IN THE DOCUMENTED FORM.
+ *
+ * A compliance audit (`docs/findings.md`, F107) measured the consequence of providing it as a plain object: it is
+ * reachable by injection, and it does NOT appear in the live Service catalogue -- `listService` answers "no catalogued
+ * Service named localSessionIndex" -- where the harness's own services (`sessionQuery`, `sessionController`) do. The
+ * class form is what the contract asks for (`services-events.md` 2.1): a `Service` subclass whose constructor names the
+ * key, so `ctx.localSessionIndex` is a registered service rather than an anonymous value.
+ *
+ * THE IMPLEMENTATION IS UNCHANGED, and `createSessionIndex` stays: the same factory a test can call directly, with the
+ * class delegating to it, so the catalogue entry costs nothing in behaviour.
+ */
+export class LocalSessionIndex extends Service {
+    constructor(ctx, config = {}) {
+        super(ctx, SESSION_INDEX_SERVICE)
+        Object.assign(this, createSessionIndex({
+            path: config?.path ?? defaultIndexPath(),
+            sessionsDir: config?.sessionsDir ?? undefined,
+            tokenizer: config?.tokenizer ?? 'trigram',
+        }))
+    }
+}
+
 function apply(ctx, config) {
-    const service = createSessionIndex({
-        path: config?.path ?? defaultIndexPath(),
-        sessionsDir: config?.sessionsDir ?? undefined,
-        tokenizer: config?.tokenizer ?? 'trigram',
-    })
-    // PROVIDED, NOT SET: a consumer may inject it, and one that does not is unaffected.
-    ctx.provide(SESSION_INDEX_SERVICE, service)
-    // THE TOOLS ARE THE SAME CAPABILITY, for a model: registered only where a tool registry exists.
+    // MOUNTED, NOT PROVIDED: `ctx.plugin` runs the class's constructor, which registers the service under its key.
+    ctx.plugin(LocalSessionIndex, { ...(config ?? {}) })
+    // THE TOOLS ARE THE SAME CAPABILITY, for a model -- and they read the LIVE service, so a row that is replaced (or
+    // never mounts) is not answered by a stale reference.
+    const live = {
+        get path() { return ctx.get(SESSION_INDEX_SERVICE)?.path },
+    }
+    for (const method of ['search', 'find', 'list', 'read', 'row', 'meta', 'refresh', 'build']) {
+        live[method] = (...args) => ctx.get(SESSION_INDEX_SERVICE)?.[method](...args)
+    }
     ctx.inject(['tools'], (child) => {
         if (child.tools === undefined || typeof child.tools.register !== 'function') return
-        for (const defined of createTools({ service })) child.tools.register(defined)
+        for (const defined of createTools({ service: live })) child.tools.register(defined)
     })
 }
 

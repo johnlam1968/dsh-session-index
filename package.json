@@ -67,5 +67,8 @@
   ],
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4"
   }
 }

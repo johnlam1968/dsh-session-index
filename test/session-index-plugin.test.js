@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Config, SESSION_INDEX_SERVICE, apply, createSessionIndex, name } from '../index.js'
+import { Config, HOST_SERVICES, SESSION_INDEX_SERVICE, apply, createSessionIndex, name } from '../index.js'
 import { buildIndex } from '../lib/build.js'
 
 function fixture() {
@@ -19,29 +19,52 @@ function fixture() {
     return { root }
 }
 
-test('the package IS a plugin: it names itself, takes config, and provides a service', () => {
+test('the package IS a plugin, and the service is a Service SUBCLASS -- which is what the catalogue needs', async () => {
     assert.equal(name, 'session-index')
     assert.equal(SESSION_INDEX_SERVICE, 'localSessionIndex')
-    let provided = null
+    const { Service } = await import('@deepseek-ai/cordis')
+    const mounted = []
     let injected = null
+    const register = (tool) => { /* the registry is not the subject here */ }
     // A HOST WITH NO TOOL REGISTRY MUST NOT BREAK `apply`: the service is the capability, and the tools are an addition
     // that only exists where a registry does.
-    const ctx = {
-        provide: (serviceName, value) => { provided = { serviceName, value } },
-        inject: (names, callback) => { injected = names; callback({}) },
+    const base = {
+        plugin: (plugin, config) => { mounted.push([plugin, config]); return { dispose() {} } },
+        get: () => undefined,
     }
-    apply(ctx, { path: '/tmp/does-not-matter.db' })
+    apply({ ...base, inject: (names, callback) => { injected = names; callback({}) } }, { path: '/tmp/does-not-matter.db' })
     assert.deepEqual(injected, ['tools'], 'the tools are registered through the tool registry')
     let registered = []
-    apply({ ...ctx, inject: (names, callback) => callback({ tools: { register: (tool) => registered.push(tool.name) } }) }, { path: '/tmp/does-not-matter.db' })
+    apply({ ...base, inject: (names, callback) => { injected = names; callback({ tools: { register: (tool) => { registered.push(tool.name); return () => {} } } }) } }, { path: '/tmp/does-not-matter.db' })
     assert.deepEqual(registered.sort(), ['session_index_list', 'session_index_read', 'session_index_refresh', 'session_index_search'])
-    assert.equal(provided.serviceName, SESSION_INDEX_SERVICE)
-    for (const method of ['search', 'find', 'meta', 'refresh', 'build']) {
-        assert.equal(typeof provided.value[method], 'function', method + ' is part of the capability')
-    }
-    // AND NOTHING ABOUT HOW IT IS STORED CROSSES THE BOUNDARY: no SQL, no table names, no file layout.
-    assert.deepEqual(Object.keys(provided.value).sort(), ['build', 'find', 'list', 'meta', 'path', 'read', 'refresh', 'row', 'search'])
+    // THE DOCUMENTED FORM: a CLASS is mounted and it extends `Service`, where the audit measured that a plain
+    // `ctx.provide` object does not reach the live Service catalogue (F107).
+    assert.equal(mounted.length, 2, 'each apply mounts the class once')
+    const [plugin, config] = mounted[0]
+    assert.equal(typeof plugin, 'function', 'a class is mounted, not a plain object')
+    assert.equal(plugin.name, 'LocalSessionIndex')
+    assert.ok(plugin.prototype instanceof Service, 'and it IS a Service subclass')
+    assert.equal(config.path, '/tmp/does-not-matter.db', 'the row config reaches the class')
     assert.equal(typeof Config, 'function', 'the row declares a config schema')
+    // AND NOTHING ABOUT HOW IT IS STORED CROSSES THE BOUNDARY: no SQL, no table names, no file layout.
+    const { LocalSessionIndex } = await import('../index.js')
+    const capability = Object.getOwnPropertyNames(LocalSessionIndex.prototype).filter((k) => k !== 'constructor')
+    assert.deepEqual(capability, [], 'the class adds no methods of its own: it delegates to the same factory')
+    // A REAL Context, because that is the evidence that matters: the constructor must REGISTER the service under its
+    // key, which is the thing the audit measured missing from the plain-object form.
+    const { Context } = await import('@deepseek-ai/cordis')
+    const ctx = new Context()
+    new LocalSessionIndex(ctx, { path: '/tmp/x.db' })
+    // MEASURED: the service is registered by the constructor, and `ctx.get` answers with a PROXY of it until the class
+    // is mounted -- after which it is the instance itself. Either way the capability is reachable under the key, which
+    // is exactly what the plain-object form did NOT do in the live catalogue (F107).
+    assert.equal(typeof ctx.get(SESSION_INDEX_SERVICE)?.search, 'function', 'registered by the constructor')
+    ctx.plugin(LocalSessionIndex, { path: '/tmp/x.db' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const mountedService = ctx.get(SESSION_INDEX_SERVICE)
+    assert.ok(mountedService instanceof LocalSessionIndex, 'and mounted as the class, which is what the catalogue lists')
+    const capabilityKeys = Object.keys(mountedService).filter((k) => !k.startsWith('_') && k !== 'ctx' && k !== 'name').sort()
+    assert.deepEqual(capabilityKeys, ['build', 'find', 'list', 'meta', 'path', 'read', 'refresh', 'row', 'search'], 'the capability, and nothing about how it is stored')
 })
 
 test('the service answers from a store it is pointed at, and reports its mode', async () => {
@@ -61,4 +84,17 @@ test('the service answers from a store it is pointed at, and reports its mode', 
         const missing = createSessionIndex({ path: join(f.root, 'nothing.db') })
         assert.deepEqual(await missing.meta(), {})
     } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+
+test('the declared host inventory is exactly what the source reaches', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const source = await readFile(new URL('../index.js', import.meta.url), 'utf8')
+    // A SERVICE IS REACHED BY `get` OR BY `inject`, and an inventory that counted only one of them would be a
+    // half-truth: this package injects `tools` and reads nothing else.
+    const reached = []
+    for (const m of source.matchAll(/ctx\.get\('([A-Za-z]+)'\)|inject\(\[([^\]]+)\]/g)) {
+        if (m[1] !== undefined) reached.push(m[1])
+        else for (const name of m[2].split(',')) reached.push(name.trim().replace(/['"]/g, ''))
+    }
+    assert.deepEqual([...new Set(reached)].sort(), [...HOST_SERVICES].sort(), 'HOST_SERVICES is not a wish: it is the source')
 })
