@@ -1,0 +1,6 @@
+# A HOST ROW: the store is a property of the deployment, not of one agent's preset. The config is omitted on purpose --
+# every default is the one a plain deployment wants (the store beside the harness home, `trigram` tokenization, the
+# harness's own sessions directory), and a default restated in two places is a default that drifts.
+- insert:
+    - id: session-index
+      name: 'dsh-session-index'

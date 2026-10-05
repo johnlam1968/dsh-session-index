@@ -1,0 +1,70 @@
+{
+  "name": "dsh-session-index",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A derived SQLite index over DSH session logs: search, list, read and an incremental rebuild -- as a service and as agent-facing tools. Imports no dsh code.",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./store": "./lib/store.js",
+    "./refresh": "./lib/refresh.js",
+    "./build": "./lib/build.js",
+    "./read": "./lib/read.js",
+    "./tools": "./lib/tools.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "session-index": "./bin/session-index.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "testedAgainst": {
+        "node": "25.3.0",
+        "dsh": "0.1.7-rc.2",
+        "note": "Re-run `npm run ci` after upgrading Node or DSH, and update these two versions only then."
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "coverage": "node --experimental-test-coverage --test --test-coverage-include='lib/*.js' --test-coverage-include='index.js' --test-coverage-lines=85 --test-coverage-branches=75 --test-coverage-functions=75 test/*.test.js",
+    "ci": "npm test && npm run coverage"
+  },
+  "files": [
+    "index.js",
+    "lib/**/*.js",
+    "bin/*.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.4"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnlam1968/dsh-session-index.git"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "session",
+    "sqlite",
+    "fts5",
+    "search"
+  ],
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4"
+  }
+}
