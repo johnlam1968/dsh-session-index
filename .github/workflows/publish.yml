@@ -1,0 +1,77 @@
+# WHAT A RELEASE IS, RUN BY A MACHINE.
+#
+# The shape is the same account's `pi-voice-telegram/.github/workflows/publish.yml`: a `v*` tag (or a manual run)
+# publishes with provenance, guarded by an idempotency check so a re-run after a partial failure is safe, and creates
+# the GitHub Release at the end.
+#
+# TWO DELIBERATE DIFFERENCES from that file:
+#   1. Node 25.x, not 24: `npm run ci` includes the coverage floor, measured on 25.x.
+#   2. The suite runs BEFORE publishing, so a red suite stops the release.
+#   3. `--tag beta`: these are prereleases, so `npm i dsh-session-index` must not pick them up.
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish dsh-session-index
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '25.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - name: Print the version being published
+        run: |
+          name=$(node -p "require('./package.json').name")
+          ver=$(node -p "require('./package.json').version")
+          echo "Publishing ${name}@${ver}"
+
+      - name: Validate the version is semver
+        run: |
+          ver=$(node -p "require('./package.json').version")
+          if [[ ! "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::invalid version: ${ver}"
+            exit 1
+          fi
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      - name: The suite and every gate
+        run: npm run ci
+
+      - name: Publish
+        run: |
+          ver=$(node -p "require('./package.json').version")
+          if npm view "dsh-session-index@${ver}" version >/dev/null 2>&1; then
+            echo "::notice::dsh-session-index@${ver} already on npm, skipping"
+          else
+            npm publish --provenance --access public --tag beta
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
