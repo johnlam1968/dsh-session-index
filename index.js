@@ -12,7 +12,7 @@
 
 import { Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { defaultIndexPath, findSessions, listSessions, metaOf, searchSessions, sessionRow } from './lib/store.js'
+import { defaultIndexPath, findSessions, listSessions, metaOf, searchSessions, sessionRow, subagentCounts } from './lib/store.js'
 import { refreshIndex } from './lib/refresh.js'
 import { readSession } from './lib/read.js'
 import { createTools } from './lib/tools.js'
@@ -46,10 +46,12 @@ export function createSessionIndex({ path = defaultIndexPath(), sessionsDir = un
         path,
         search: (term, { limit = 20 } = {}) => searchSessions(term, { path, limit }),
         find: (term, { limit = 20 } = {}) => findSessions(term, { path, limit }),
-        list: ({ cwd = null, search = null, limit = 20 } = {}) => listSessions({ path, cwd, search, limit }),
+        list: ({ cwd = null, search = null, subagents = 'include', limit = 20 } = {}) => listSessions({ path, cwd, search, subagents, limit }),
         read: (id, options = {}) => readSession(id, { path, ...options }),
         row: (id) => sessionRow(id, { path }),
         meta: () => metaOf(path),
+        // HOW MANY OF THE ROWS ARE SUBAGENT RUNS, so a list can say what it is a list of (ROADMAP §14.4 item 3).
+        counts: () => subagentCounts({ path }),
         refresh: ({ timeoutMs = 120000 } = {}) => refreshIndex({ out: path, ...options, timeoutMs }),
         // THE BUILDER IS IMPORTED LAZILY: `lib/build.js` loads `node:sqlite` at module scope, and loading an experimental
         // built-in while a host starts should not be a plugin's side effect.
@@ -91,7 +93,7 @@ function apply(ctx, config) {
     const live = {
         get path() { return ctx.get(SESSION_INDEX_SERVICE)?.path },
     }
-    for (const method of ['search', 'find', 'list', 'read', 'row', 'meta', 'refresh', 'build']) {
+    for (const method of ['search', 'find', 'list', 'read', 'row', 'meta', 'counts', 'refresh', 'build']) {
         live[method] = (...args) => ctx.get(SESSION_INDEX_SERVICE)?.[method](...args)
     }
     ctx.inject(['tools'], (child) => {

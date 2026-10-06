@@ -64,7 +64,7 @@ test('the package IS a plugin, and the service is a Service SUBCLASS -- which is
     const mountedService = ctx.get(SESSION_INDEX_SERVICE)
     assert.ok(mountedService instanceof LocalSessionIndex, 'and mounted as the class, which is what the catalogue lists')
     const capabilityKeys = Object.keys(mountedService).filter((k) => !k.startsWith('_') && k !== 'ctx' && k !== 'name').sort()
-    assert.deepEqual(capabilityKeys, ['build', 'find', 'list', 'meta', 'path', 'read', 'refresh', 'row', 'search'], 'the capability, and nothing about how it is stored')
+    assert.deepEqual(capabilityKeys, ['build', 'counts', 'find', 'list', 'meta', 'path', 'read', 'refresh', 'row', 'search'], 'the capability, and nothing about how it is stored (`counts` says how many rows a list is drawn from, and how many of them are subagent runs)')
 })
 
 test('the service answers from a store it is pointed at, and reports its mode', async () => {

@@ -133,3 +133,35 @@ test('the tools REFUSE BY NAME: a bad argument, a missing session, an empty quer
         assert.match((await read.execute({ sessionId: 'session-a' })).problem, /could not be read/)
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
+
+test('`session_index_list` says what it is a list of, and filters subagents on request', async () => {
+    // The store-level predicate is pinned above; this pins the ANSWER -- the mixture on the line, the filter named, and
+    // the origin on the row -- because a filter a model cannot see is a filter it will not use.
+    const root = mkdtempSync(join(tmpdir(), 'session-index-tools-sub-'))
+    const path = join(root, 'store.db')
+    try {
+        const write = (id, header) => {
+            const dir = join(root, `--tmp-${id}--`, id)
+            mkdirSync(dir, { recursive: true })
+            writeFileSync(join(dir, 'session.v4.jsonl'), [
+                JSON.stringify({ type: 'session', version: 4, id, createdAt: 1789873194109, cwd: '/tmp/work', ...header }),
+                JSON.stringify({ type: 'user/message', seq: 1, time: 1, data: { turn: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } }),
+            ].join('\n') + '\n')
+        }
+        write('session-man', {})
+        write('session-worker', { parentSession: 'session-man', origin: 'subagent' })
+        buildIndex({ sessionsDir: root, out: path })
+        const list = toolNamed(createTools({ service: createSessionIndex({ path, sessionsDir: root }) }), TOOL_NAMES.list)
+        const every = await list.execute({})
+        assert.deepEqual(every.subagents, { subagentRuns: 1, ofTotal: 2, shown: 'include' })
+        const conversations = await list.execute({ subagents: 'exclude' })
+        assert.deepEqual(conversations.sessions.map((row) => row.id), ['session-man'])
+        assert.equal(conversations.sessions[0].origin, undefined, 'an ordinary session carries no origin rather than a null one')
+        const workers = await list.execute({ subagents: 'only' })
+        assert.equal(workers.sessions[0].origin, 'subagent')
+        assert.equal(workers.sessions[0].parentSession, 'session-man')
+        const text = list.output.render({}, workers).map((block) => block.text).join('\n')
+        assert.match(text, /1 of 2 session\(s\) in the store are SUBAGENT runs; this list is `subagents: only`/)
+        assert.match(text, /\[subagent of session-man\]/)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+})

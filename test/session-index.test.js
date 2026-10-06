@@ -7,7 +7,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildIndex, foldSession, readCounts, sessionFiles, sessionLines } from '../lib/build.js'
-import { findSessions, metaOf, searchSessions } from '../lib/store.js'
+import { findSessions, listSessions, metaOf, searchSessions, subagentCounts } from '../lib/store.js'
 
 /** A fixture session: header at the RECORD level, a title event whose `source` is an object, and a replace op. */
 function fixture() {
@@ -376,4 +376,44 @@ test('a store built with NO mirror searches by SCAN, and says so', async () => {
         assert.equal(found.rows.length, 1)
         assert.equal((await metaOf(out)).search_mode, 'like')
     } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+
+/**
+ * A SECOND session in the same root, ordinary unless its header says otherwise.
+ *
+ * `fixture()` is a SUBAGENT (it names a parent and an origin); this one exists so the two can be told apart in ONE
+ * store, which is the only way a filter can be tested -- a store holding only subagents passes any predicate.
+ */
+function sessionIn(root, id, header = {}) {
+    const dir = join(root, `--tmp-${id}--`, id)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.v4.jsonl'), [
+        JSON.stringify({ type: 'session', version: 4, id, createdAt: 1789873194200, cwd: '/tmp/work', ...header }),
+        JSON.stringify({ type: 'user/message', seq: 1, time: 1, data: { turn: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'do the thing' }] } }),
+    ].join('\n') + '\n')
+    return dir
+}
+
+test('the store can tell a SUBAGENT run from a conversation, and `exclude` does not drop the conversations', async () => {
+    // ROADMAP 14.4 item 3. Measured on the live store before this existed: 318 of 499 sessions are subagent runs, and
+    // the index carried `origin` and `parent_session` without being able to filter on them.
+    const root = mkdtempSync(join(tmpdir(), 'session-index-sub-'))
+    const out = join(root, 'store.db')
+    try {
+        sessionIn(root, 'session-worker', { parentSession: 'session-man', origin: 'subagent', delegationDepth: 1 })
+        sessionIn(root, 'session-man')
+        buildIndex({ sessionsDir: root, out })
+        const all = await listSessions({ path: out })
+        assert.equal(all.length, 2, 'the default is EVERYTHING: a store that hid 64% of its rows would answer a question nobody asked')
+        // THE NULL CASE IS THE WHOLE POINT: an ordinary session has `origin = NULL`, and `origin != 'subagent'` is NULL
+        // for it, so a naive `!=` would return ZERO conversations from an exclude. `IS NOT` is null-safe.
+        const conversations = await listSessions({ path: out, subagents: 'exclude' })
+        assert.deepEqual(conversations.map((row) => row.id), ['session-man'], 'the NULL origin survives an exclude')
+        const workers = await listSessions({ path: out, subagents: 'only' })
+        assert.deepEqual(workers.map((row) => row.id), ['session-worker'])
+        assert.equal(workers[0].origin, 'subagent')
+        assert.equal(workers[0].parent_session, 'session-man', 'and fork lineage rides the row beside it')
+        assert.equal(conversations[0].origin, null)
+        assert.deepEqual(await subagentCounts({ path: out }), { total: 2, subagents: 1 })
+    } finally { rmSync(root, { recursive: true, force: true }) }
 })

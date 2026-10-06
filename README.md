@@ -63,7 +63,7 @@ boundary, so a consumer cannot come to depend on a store that is derived and fre
 
 | tool | the question it answers |
 |---|---|
-| `session_index_list` | what is in the store: ids, titles, working directories, size |
+| `session_index_list` | what is in the store: ids, titles, working directories, size, and whether a row is a SUBAGENT run. `subagents: include\|exclude\|only` filters them (measured: 318 of 499 rows are worker runs), and the answer always reports the mixture |
 | `session_index_read` | one session's conversation, as it was said — with how much session there is and what was left out |
 | `session_index_search` | where a phrase appears, and **which mechanism** answered |
 | `session_index_refresh` | bring the store current, incrementally, in a child process |
