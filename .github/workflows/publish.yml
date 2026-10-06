@@ -52,6 +52,16 @@ jobs:
             exit 1
           fi
 
+      - name: npm must be new enough for the OIDC exchange
+        run: |
+          ver=$(npm --version)
+          major=${ver%%.*}; rest=${ver#*.}; minor=${rest%%.*}
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
+            echo "::error::npm $ver is too old for trusted publishing; needs >= 11.5"
+            exit 1
+          fi
+          echo "npm $ver supports the OIDC exchange"
+
       - name: Install from the lockfile
         run: npm ci
 
@@ -66,8 +76,6 @@ jobs:
           else
             npm publish --provenance --access public --tag beta
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 
       - name: The prerelease must not be on \`latest\`
