@@ -74,7 +74,12 @@ jobs:
           if npm view "dsh-session-index@${ver}" version >/dev/null 2>&1; then
             echo "::notice::dsh-session-index@${ver} already on npm, skipping"
           else
-            npm publish --provenance --access public --tag beta
+            # THE TAG FOLLOWS THE VERSION: a prerelease goes to `beta` so it cannot become what `npm i` installs,
+            # and a STABLE release goes to `latest`, which is the only thing that moves the npm page and the
+            # default install. Hard-coding `beta` here would publish 0.1.0 and leave `latest` on an old beta.
+            if [[ "$ver" == *-* ]]; then tag=beta; else tag=latest; fi
+            echo "publishing ${ver} with dist-tag ${tag}"
+            npm publish --provenance --access public --tag "$tag"
           fi
 
 
