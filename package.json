@@ -15,7 +15,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "session-index": "./bin/session-index.mjs"
+    "session-index": "bin/session-index.mjs"
   },
   "dsh": {
     "bundle": {
