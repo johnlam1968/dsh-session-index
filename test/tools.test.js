@@ -162,6 +162,6 @@ test('`session_index_list` says what it is a list of, and filters subagents on r
         assert.equal(workers.sessions[0].parentSession, 'session-man')
         const text = list.output.render({}, workers).map((block) => block.text).join('\n')
         assert.match(text, /1 of 2 session\(s\) in the store are SUBAGENT runs; this list is `subagents: only`/)
-        assert.match(text, /\[subagent of session-man\]/)
+        assert.match(text, /\[subagent \| parentSession: session-man\]/, 'the two facts are named separately: origin decides worker-vs-conversation, parentSession is lineage')
     } finally { rmSync(root, { recursive: true, force: true }) }
 })
