@@ -78,15 +78,25 @@ jobs:
           fi
 
 
-      - name: The prerelease must not be on \`latest\`
+      - name: "A prerelease must not be latest once a stable version exists"
         run: |
           ver=$(node -p "require('./package.json').version")
-          latest=$(npm view "$(node -p "require('./package.json').name")" dist-tags.latest 2>/dev/null || echo '')
-          if [ "$latest" = "$ver" ] && [[ "$ver" == *-* ]]; then
-            echo "::error::$ver is a PRERELEASE and it is on the latest tag, so npm i would install it. Fix the tag first: npm dist-tag add <pkg>@<previous> latest"
+          pkg=$(node -p "require('./package.json').name")
+          latest=$(npm view "$pkg" dist-tags.latest 2>/dev/null || echo '')
+          if [ "$latest" != "$ver" ] || [[ "$ver" != *-* ]]; then
+            echo "tag check ok: latest=${latest:-<none>} (this release is $ver)"
+            exit 0
+          fi
+          # npm gives latest to the FIRST version even when --tag beta is passed: measured on this project's first
+          # release, where latest and beta both pointed at 0.1.0-beta.1. So while every published version is a
+          # prerelease this is npm's doing -- a warning. Once a STABLE version exists, a prerelease on latest means
+          # npm i installs a beta, and that is an error.
+          stable=$(npm view "$pkg" versions --json 2>/dev/null | tr -d '[]" ' | tr ',' '\n' | grep -c -v -- '-' || true)
+          if [ "${stable:-0}" -gt 0 ]; then
+            echo "::error::$ver is a PRERELEASE on latest while $stable stable version(s) exist, so npm i installs a beta. Move it: npm dist-tag add $pkg@<stable> latest"
             exit 1
           fi
-          echo "tag check ok: latest=${latest:-<none>} (this release is $ver)"
+          echo "::warning::$ver is on latest because it is the only version published; npm does this for a first release. Publish a stable version to move it."
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
