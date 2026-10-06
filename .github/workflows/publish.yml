@@ -87,15 +87,23 @@ jobs:
         run: |
           ver=$(node -p "require('./package.json').version")
           pkg=$(node -p "require('./package.json').name")
-          if npm view "$pkg@$ver" version >/dev/null 2>&1; then
+          # RETRY FOR MINUTES, NOT SECONDS: npm prints the SAME two lines whether it published a version that is
+          # still being processed or STAGED one awaiting approval ("being processed" + "+ name@version"), so only the
+          # registry, plus time, can tell them apart. A 20-second window declared a published release "staged"
+          # (F136), and this repository's first STABLE release hit exactly that: the publish step exited 0 with
+          # `with tag latest` and signed provenance, and the check called it staged while nothing was visible yet.
+          found=false
+          for attempt in $(seq 1 13); do
+            if npm view "$pkg@$ver" version >/dev/null 2>&1; then found=true; break; fi
+            sleep 15
+          done
+          if [ "$found" = true ]; then
             echo "installable: $pkg@$ver"
             exit 0
           fi
-          echo "::error::$pkg@$ver is NOT on the registry: npm staged it, or refused it. A green run is not a release."
-          echo "::error::Approve the staged version (npm >= 12): npx npm@latest stage list && npx npm@latest stage approve <id>"
-          echo "::error::Or publish directly: npmjs.com -> the package -> Trusted Publishing -> allowed action 'npm publish', then re-run this workflow."
+          echo "::error::$pkg@$ver is still not on the registry after ~3 minutes. npm accepted it and said it was 'being processed', so it is either unusually slow or STAGED; the CLI cannot tell them apart."
+          echo "::error::Check with: npx npm@latest stage list   (npm >= 12), then approve or reject the entry."
           exit 1
-
       - name: "A prerelease must not be latest once a stable version exists"
         run: |
           ver=$(node -p "require('./package.json').version")
