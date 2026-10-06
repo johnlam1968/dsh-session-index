@@ -78,6 +78,19 @@ jobs:
           fi
 
 
+      - name: The version must be INSTALLABLE, because a staged publish is not a release
+        run: |
+          ver=$(node -p "require('./package.json').version")
+          pkg=$(node -p "require('./package.json').name")
+          if npm view "$pkg@$ver" version >/dev/null 2>&1; then
+            echo "installable: $pkg@$ver"
+            exit 0
+          fi
+          echo "::error::$pkg@$ver is NOT on the registry: npm staged it, or refused it. A green run is not a release."
+          echo "::error::Approve the staged version (npm >= 12): npx npm@latest stage list && npx npm@latest stage approve <id>"
+          echo "::error::Or publish directly: npmjs.com -> the package -> Trusted Publishing -> allowed action 'npm publish', then re-run this workflow."
+          exit 1
+
       - name: "A prerelease must not be latest once a stable version exists"
         run: |
           ver=$(node -p "require('./package.json').version")
