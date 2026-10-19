@@ -69,7 +69,10 @@ test('a REPLACED event is shadowed even though the replace op comes AFTER it', (
         const { row, messages } = foldSession({ id: f.id, path: 'x', version: 4, text, sha256, bytes: 1 })
         // seq 2 (the ask) and seq 4 (the tool call is not a message; seq 3 the assistant message) are inside 2..4
         assert.equal(row.shadowed, 2, 'the ask at seq 2 and the assistant message at seq 3 are withdrawn')
-        assert.equal(messages.filter((m) => m[7] === 1).length, 2)
+        assert.equal(messages.filter((m) => m[8] === 1).length, 2, 'the SHADOWED column (index 8), not reasoning (7)')
+        // AND REASONING SURVIVES, which is what the wrong index destroyed: the pass was writing 1 over the column it
+        // used to be, so a shadowed message reported `1` characters of reasoning that no longer existed.
+        assert.ok(messages.every((m) => typeof m[7] === 'string'), 'reasoning is still a string on every row')
         assert.equal(row.asks, 1, 'a withdrawn ask is still an ask that happened')
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
@@ -416,4 +419,83 @@ test('the store can tell a SUBAGENT run from a conversation, and `exclude` does 
         assert.equal(conversations[0].origin, null)
         assert.deepEqual(await subagentCounts({ path: out }), { total: 2, subagents: 1 })
     } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// ── THE ASK-GROUP: the boundary a query should use, because `turn` is not one ───────────────────────────────────────
+//
+// The schema kept `turn` and added `exchange` beside it. That is the whole change, and the reason is a measurement
+// rather than a preference: a converter that does not number turns writes null into `turn` for every message, so a
+// "per turn" query silently becomes a dsh-ONLY query while appearing cross-harness. In the corpus this store was
+// designed against, all 44 pi messages carried a null turn.
+//
+// These two tests are the same conversation written twice: once as a dsh log that numbers its turns, once without.
+// The claim is that the ASK-GROUP is identical for both, and `turn` is not.
+
+/**
+ * One ask, one answer, one second ask, one second answer -- NUMBERED or NOT.
+ *
+ * `numbered: false` writes no `turn` field at all rather than writing `turn: null`, because that is what a converter
+ * that does not number turns actually emits, and the test would otherwise be proving a case that never happens.
+ */
+function conversation({ numbered }) {
+    // THE TWO SHAPES, because this store reads them differently and a fixture that uses one for both measures zero
+    // characters of assistant text -- which is exactly what happened the first time this test was written.
+    const msg = (seq, type, text, turnValue) => {
+        const content = [{ type: 'text', text }]
+        const data = type === 'assistant/message' ? { message: { content } } : { content }
+        return JSON.stringify(numbered ? { type, seq, data: { ...data, turn: turnValue } } : { type, seq, data })
+    }
+    return [
+        JSON.stringify({ type: 'session', version: 4, id: 'x' }),
+        msg(1, 'user/message', 'first ask', 1),
+        msg(2, 'assistant/message', 'first answer', 1),
+        msg(3, 'user/message', 'second ask', 2),
+        msg(4, 'assistant/message', 'second answer', 2),
+    ].join('\n')
+}
+
+test('the ASK-GROUP is derived, so a session with NO turn at all is still grouped', () => {
+    const sha256 = 'a'.repeat(64)
+    const withTurn = foldSession({ id: 'x', path: 'x', version: 4, text: conversation({ numbered: true }), sha256, bytes: 1 })
+    const without = foldSession({ id: 'x', path: 'x', version: 4, text: conversation({ numbered: false }), sha256, bytes: 1 })
+
+    // THIS IS THE PI CASE, WRITTEN AS THE TEST THAT WOULD HAVE CAUGHT IT: the same conversation with `turn` absent
+    // throughout. Under the old schema every message here sat at turn = null and one "per turn" query would have
+    // reported a single group while looking cross-harness.
+    assert.equal(without.row.asks, 2)
+    assert.deepEqual(without.messages.map((m) => m[2]), [null, null, null, null], 'and every turn really is null')
+    assert.deepEqual(without.messages.map((m) => m[3]), [0, 0, 1, 1], 'while the ask-groups are 0,0,1,1')
+    // AND THE TWO WRITINGS AGREE, which is the property the shared column exists for.
+    assert.deepEqual(without.messages.map((m) => m[3]), withTurn.messages.map((m) => m[3]))
+})
+
+test('a session opening with narration puts it in the FIRST group, so no group is left with no ask', () => {
+    const sha256 = 'b'.repeat(64)
+    const text = [
+        JSON.stringify({ type: 'session', version: 4, id: 'x' }),
+        JSON.stringify({ type: 'assistant/message', seq: 1, data: { content: [{ type: 'text', text: 'opening narration' }] } }),
+        JSON.stringify({ type: 'user/message', seq: 2, data: { content: [{ type: 'text', text: 'the ask' }] } }),
+        JSON.stringify({ type: 'assistant/message', seq: 3, data: { content: [{ type: 'text', text: 'the answer' }] } }),
+    ].join('\n')
+    const { messages, turns } = foldSession({ id: 'x', path: 'x', version: 4, text, sha256, bytes: 1 })
+    // THE ASK IS WHAT OPENS A GROUP, so leading narration joins the group the first ask opens rather than forming one
+    // of its own. A boundary with no ask in it is a group no query should be able to select: "what did the operator
+    // ask here" would return an empty set for it, and a conversation-level count would include a group that never
+    // happened. Asserted here because the counter starting at -1 makes this the non-obvious case.
+    assert.deepEqual(messages.map((m) => m[3]), [0, 0, 0], 'narration before the first ask joins the first group')
+    assert.equal(turns.length, 1, 'and there is ONE boundary, not two')
+    assert.deepEqual(turns.map((t) => t[1]), [0])
+})
+
+test('THE BOUNDARIES TABLE: one row per ask-group, carrying the ask, the answer and what was withdrawn', () => {
+    const sha256 = 'c'.repeat(64)
+    const { turns } = foldSession({ id: 'x', path: 'x', version: 4, text: conversation({ numbered: false }), sha256, bytes: 1 })
+    assert.equal(turns.length, 2)
+    const [first, second] = turns
+    assert.equal(first[0], 'x', 'the session id, so a query can join on it')
+    assert.equal(first[1], 0, 'the group ordinal')
+    assert.equal(first[2], 1, 'the ask seq')
+    assert.equal(first[5], 'first answer'.length, 'the answer chars')
+    assert.equal(second[2], 3, 'the second ask seq')
+    assert.equal(first[6], 1, 'one ask opened this group')
 })
