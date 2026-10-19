@@ -49,6 +49,22 @@ test('the header record carries cwd and createdAt at the TOP level, and it is wh
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })
 
+test('THE SOURCE SHA IS A WHOLE SHA256, because the receipt of a measurement is read from it', () => {
+    // THE TRUNCATION THAT COST EVERY SESSION IN THE INDEX. `source_sha256` held the first 16 hex characters of the
+    // digest -- a display convenience in a column whose name says `sha256`. `dsh-system1-observer` carries this value
+    // through into the receipt of a reading and refuses a receipt whose sha is not 64 hex characters, because "the
+    // measurement names nothing it read" -- so a truncated digest made every session unreadable, and the reader could
+    // not repair it: the bytes it would need to recompute are not in the index.
+    const f = fixture()
+    try {
+        const { text, sha256 } = sessionLines(join(f.dir, 'session.v4.jsonl'))
+        assert.equal(sha256.length, 64, 'a sha256 is 64 hex characters')
+        assert.match(sha256, /^[0-9a-f]{64}$/, 'and it is hex')
+        const { row } = foldSession({ id: f.id, path: 'x', version: 4, text, sha256, bytes: 1 })
+        assert.equal(row.source_sha256, sha256, 'and the stored receipt is that digest, unaltered')
+    } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+
 test('a title event keeps its TEXT, its set of asks and its provenance, which is an OBJECT on a real log', () => {
     const f = fixture()
     try {
@@ -442,7 +458,11 @@ function conversation({ numbered }) {
     // characters of assistant text -- which is exactly what happened the first time this test was written.
     const msg = (seq, type, text, turnValue) => {
         const content = [{ type: 'text', text }]
-        const data = type === 'assistant/message' ? { message: { content } } : { content }
+        // A `user/message` CARRIES ITS SOURCE KIND, and that is what says who wrote it. The harness speaks on the user
+        // channel too -- a goal, a skill catalogue -- and only `data.source.kind` separates those from a person typing.
+        // Measured on this host: 180 of 1,501 `user/message` events in real sessions were the harness, not the human.
+        // A fixture that omits the kind is not a human message, and this store now reads it as one.
+        const data = type === 'assistant/message' ? { message: { content } } : { content, source: { kind: 'user' } }
         return JSON.stringify(numbered ? { type, seq, data: { ...data, turn: turnValue } } : { type, seq, data })
     }
     return [
@@ -474,7 +494,7 @@ test('a session opening with narration puts it in the FIRST group, so no group i
     const text = [
         JSON.stringify({ type: 'session', version: 4, id: 'x' }),
         JSON.stringify({ type: 'assistant/message', seq: 1, data: { content: [{ type: 'text', text: 'opening narration' }] } }),
-        JSON.stringify({ type: 'user/message', seq: 2, data: { content: [{ type: 'text', text: 'the ask' }] } }),
+        JSON.stringify({ type: 'user/message', seq: 2, data: { content: [{ type: 'text', text: 'the ask' }], source: { kind: 'user' } } }),
         JSON.stringify({ type: 'assistant/message', seq: 3, data: { content: [{ type: 'text', text: 'the answer' }] } }),
     ].join('\n')
     const { messages, turns } = foldSession({ id: 'x', path: 'x', version: 4, text, sha256, bytes: 1 })
@@ -485,6 +505,32 @@ test('a session opening with narration puts it in the FIRST group, so no group i
     assert.deepEqual(messages.map((m) => m[3]), [0, 0, 0], 'narration before the first ask joins the first group')
     assert.equal(turns.length, 1, 'and there is ONE boundary, not two')
     assert.deepEqual(turns.map((t) => t[1]), [0])
+})
+
+test('A MISSING SOURCE IS NOT THE HUMAN, and this store says so the same way the reader does', () => {
+    // THE TWO PRODUCERS HAVE TO AGREE ABOUT WHO SPOKE. `dsh-system1-observer` treats a `user/message` whose
+    // `data.source.kind` is absent as NOT the human -- conservative on purpose, because calling an injection the
+    // operator's input is a worse error than dropping one message. This store used to default such a message to
+    // `'user'`, so the same session read as 403 asks from the index and 753 from the log.
+    //
+    // The default never fires on real data: the v4 log "requires a producer-owned source kind" and refuses a log
+    // without one, and measured across 120 session files and 1,501 `user/message` events on this host, **zero** lacked
+    // a source and **zero** had a source without a kind. So the default only ever decided what a malformed log means,
+    // and now it means the same thing here as it does there.
+    const sha256 = 'd'.repeat(64)
+    const text = [
+        JSON.stringify({ type: 'session', version: 4, id: 'x' }),
+        JSON.stringify({ type: 'user/message', seq: 1, data: { content: [{ type: 'text', text: 'no source kind here' }] } }),
+        JSON.stringify({ type: 'user/message', seq: 2, data: { content: [{ type: 'text', text: 'a real ask' }], source: { kind: 'user' } } }),
+        JSON.stringify({ type: 'assistant/message', seq: 3, data: { content: [{ type: 'text', text: 'the answer' }] } }),
+    ].join('\n')
+    const { messages, turns, row } = foldSession({ id: 'x', path: 'x', version: 4, text, sha256, bytes: 1 })
+    assert.equal(row.asks, 1, 'only the message that declares a human source is an ask')
+    // THE ROLE, and the ROW LAYOUT: 0 id, 1 seq, 2 turn, 3 exchange, 4 role, 5 kind, 6 text, 7 reasoning, 8 shadowed.
+    assert.equal(messages[0][4], 'harness', 'a message with no declared author is the harness speaking')
+    assert.equal(messages[1][4], 'user', 'and one that declares a human source is the operator')
+    assert.equal(turns.length, 1, 'so there is ONE ask-group, not two')
+    assert.deepEqual(messages.map((m) => m[3]), [0, 0, 0], 'and the sourceless message joins the group the ask opened')
 })
 
 test('THE BOUNDARIES TABLE: one row per ask-group, carrying the ask, the answer and what was withdrawn', () => {
