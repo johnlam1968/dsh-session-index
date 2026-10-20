@@ -46,7 +46,7 @@ export function createSessionIndex({ path = defaultIndexPath(), sessionsDir = un
         path,
         search: (term, { limit = 20 } = {}) => searchSessions(term, { path, limit }),
         find: (term, { limit = 20 } = {}) => findSessions(term, { path, limit }),
-        list: ({ cwd = null, search = null, subagents = 'include', limit = 20 } = {}) => listSessions({ path, cwd, search, subagents, limit }),
+        list: ({ cwd = null, search = null, subagents = 'include', corpus = null, limit = 20 } = {}) => listSessions({ path, cwd, search, subagents, corpus, limit }),
         read: (id, options = {}) => readSession(id, { path, ...options }),
         row: (id) => sessionRow(id, { path }),
         meta: () => metaOf(path),
