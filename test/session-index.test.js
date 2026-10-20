@@ -87,8 +87,11 @@ test('a REPLACED event is shadowed even though the replace op comes AFTER it', (
         assert.equal(row.shadowed, 2, 'the ask at seq 2 and the assistant message at seq 3 are withdrawn')
         assert.equal(messages.filter((m) => m[8] === 1).length, 2, 'the SHADOWED column (index 8), not reasoning (7)')
         // AND REASONING SURVIVES, which is what the wrong index destroyed: the pass was writing 1 over the column it
-        // used to be, so a shadowed message reported `1` characters of reasoning that no longer existed.
-        assert.ok(messages.every((m) => typeof m[7] === 'string'), 'reasoning is still a string on every row')
+        // used to be, so a shadowed message reported `1` characters of reasoning that no longer existed. The column
+        // holds a STRING when there is reasoning and NULL when there is none -- the rows contract's rule 4 says
+        // absence is `null` and never `''` -- and it is NEVER the integer 1, which is what the wrong index wrote.
+        assert.ok(messages.every((m) => m[7] === null || typeof m[7] === 'string'), 'reasoning is a string or null on every row, and never the integer 1')
+        assert.ok(messages.some((m) => m[7] === null), 'and a message with no reasoning says so with null')
         assert.equal(row.asks, 1, 'a withdrawn ask is still an ask that happened')
     } finally { rmSync(f.root, { recursive: true, force: true }) }
 })

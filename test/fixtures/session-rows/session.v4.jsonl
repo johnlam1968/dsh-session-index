@@ -1,0 +1,8 @@
+{"type":"session","version":4,"id":"conformance-1","createdAt":1789873194109,"cwd":"/tmp/conformance"}
+{"type":"user/message","seq":1,"time":1,"data":{"turn":1,"source":{"kind":"user"},"content":[{"type":"text","text":"push this repo "}]}}
+{"type":"assistant/message","seq":2,"time":2,"data":{"turn":1,"message":{"content":[{"type":"reasoning","text":"think"},{"type":"text","text":"done"}]}}}
+{"type":"tool/call","seq":3,"time":3,"data":{"callId":"c1","name":"bash","arguments":"{\"cmd\":\"git push\"}"}}
+{"type":"tool/result","seq":4,"time":4,"data":{"message":{"toolCallId":"c1","content":[{"type":"text","text":"pushed"}]}}}
+{"type":"user/message","seq":5,"time":5,"data":{"turn":2,"source":{"kind":"goal"},"content":[{"type":"text","text":"GOAL: finish the migration"}]}}
+{"type":"assistant/message","seq":6,"time":6,"data":{"turn":2,"interrupted":true,"message":{"content":[{"type":"text","text":"a\u0000b"}]}}}
+{"type":"user/message","seq":7,"time":7,"surfaceOp":{"op":"replace","startSeq":2,"endSeq":3},"data":{"source":{"kind":"compact-checkpoint"},"content":"summary of the above"}}
