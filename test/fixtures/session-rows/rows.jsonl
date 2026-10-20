@@ -1,6 +1,12 @@
 {"kind":"message","seq":1,"exchange":0,"ordinal":1,"role":"user","type":"text","text":"push this repo","reasoning":null,"shadowed":false,"interrupted":null}
-{"kind":"message","seq":2,"exchange":0,"ordinal":2,"role":"assistant","type":"text","text":"done","reasoning":"think","shadowed":true,"interrupted":null}
+{"kind":"message","seq":2,"exchange":0,"ordinal":2,"role":"assistant","type":"text","text":"done!","reasoning":"think\nthen this","shadowed":true,"interrupted":null}
 {"kind":"tool_call","seq":3,"exchange":0,"callId":"c1","name":"bash","args":"{\"cmd\":\"git push\"}","result":null,"outcome":null}
 {"kind":"message","seq":5,"exchange":0,"ordinal":3,"role":"system","type":"text","text":"GOAL: finish the migration","reasoning":null,"shadowed":false,"interrupted":null}
 {"kind":"message","seq":6,"exchange":0,"ordinal":4,"role":"assistant","type":"text","text":"a�b","reasoning":null,"shadowed":false,"interrupted":true}
 {"kind":"message","seq":7,"exchange":0,"ordinal":5,"role":"system","type":"text","text":"summary of the above","reasoning":null,"shadowed":false,"interrupted":null}
+{"kind":"tool_call","seq":8,"exchange":0,"callId":"c2","name":"ba�sh","args":"{\"cmd\":\"rm � -rf\"}","result":null,"outcome":null}
+{"kind":"message","seq":9,"exchange":1,"ordinal":6,"role":"user","type":"text","text":"second question","reasoning":null,"shadowed":false,"interrupted":null}
+{"kind":"message","seq":10,"exchange":1,"ordinal":7,"role":"assistant","type":"text","text":"second answer","reasoning":"thought","shadowed":false,"interrupted":null}
+{"kind":"message","seq":11,"exchange":2,"ordinal":8,"role":"user","type":"text","text":"third question","reasoning":null,"shadowed":false,"interrupted":null}
+{"kind":"message","seq":12,"exchange":2,"ordinal":9,"role":"assistant","type":"text","text":"never interrupted","reasoning":null,"shadowed":false,"interrupted":false}
+{"kind":"message","seq":13,"exchange":2,"ordinal":10,"role":"assistant","type":"text","text":"","reasoning":null,"shadowed":false,"interrupted":null}
