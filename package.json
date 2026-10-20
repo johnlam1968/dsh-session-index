@@ -45,6 +45,7 @@
     "package.json"
   ],
   "dependencies": {
+    "dsh-session-rows": "^0.2.0",
     "@deepseek-ai/schemastery": "3.18.4"
   },
   "engines": {
