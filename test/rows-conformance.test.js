@@ -7,7 +7,7 @@
 // (**F179**) and about a NUL byte (**F180**). But a corpus cannot be a GATE: it lives on one machine, it changes under
 // you, and a test that needs 946 sessions and 1.5 GB of index is a test nobody runs.
 //
-// So the rules are said ONCE, in the package `dsh-session-rows`, and the FIXTURE says what they produce. This store
+// So the rules are said ONCE, in the package `system1-measure/rules`, and the FIXTURE says what they produce. This store
 // vendors the fixture and pins its digest, so a fixture that changes in the package cannot be quietly different here.
 //
 // ONE DIFFERENCE IS EXPECTED AND NAMED: this store calls the harness `harness` where the rows contract calls it
